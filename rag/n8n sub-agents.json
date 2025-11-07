@@ -1,0 +1,600 @@
+{
+  "name": "📎 n8n sub-agents",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -144,
+        0
+      ],
+      "id": "b95975ec-f7a8-43f6-b6b9-9b252c6827e5",
+      "name": "When chat message received",
+      "webhookId": "268b4bc9-a756-4a09-8205-0b96bfdf193e"
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 50
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        288,
+        192
+      ],
+      "id": "a63c33db-e398-4f2f-ac46-9e00b058da16",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        656,
+        752
+      ],
+      "id": "04362a85-5a03-4515-87fc-c881bbd1157c",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "n0vBwBT1ylk4CTk2",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "q": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Search_Query__q_', ``, 'string') }}",
+        "location": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Location__location_', ``, 'string') }}",
+        "additionalFields": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-serpapi.serpApiTool",
+      "typeVersion": 1,
+      "position": [
+        752,
+        480
+      ],
+      "id": "48ccc4fd-b33a-46c2-a610-6a9279d3d9d1",
+      "name": "Google search in SerpApi",
+      "credentials": {
+        "serpApi": {
+          "id": "bkKlwCcjXDankust",
+          "name": "SerpApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "You are a supervisor agent on the n8n multi-agent system.  \nYour mission is to receive your message, understand your intentions, and decide on a professional Subagent or tool to handle it.\n\n### 🔧 User experience\nYou can call the following SubAgents and Tools:\n\n1. Search Agent\n   - Purpose: General information inquiry through the SERP API (Google Search) and Jira.\n   - Used when users request facts, current events, definitions, or general knowledge.\n   - Sample triggers: \"Search me\", \"Summary\", \"recent news\", \"Search me for information\".\n\n2. Issue Management Agent\n   - Purpose: Managing Jira issues such as allocating Jira personnel and creating new issues.\n   - Used when users comment on issue creation and updates.\n   - Example triggers: \"Please create an issue\", \"Allocate the person in charge\", \"Please update the issue with that content\".\n\n3. Transfer Agent\n   - Purpose: Send a formalized message or mail to Teams.\n   - Use when the user mentions \"Teams\", \"Send me a notification\", or sending a message or mail.\n   - Sample triggers: \"Share as a team\", \"Mail me\", \"Message to the channel\".\n\n---\n\n### 🧩 Routing Rules\n- Step 1: Classifying Intentions  \n  Analyze the contents of user messages.  \n  Routes to an agent if it clearly matches one of the SubAgents domains.\n- Step 2: Ambiguous Request  \n  Ask one short, clear question or choose the closest match according to context.\n- Step 3: Fallback  \n  If it doesn't fit, use an internal model to answer directly with simple and useful text.\n\n---\n\n### 🧠 Memory and context processing\n- Each Subagent has its own short-term memory.  \n- Don't mix the context between them.  \n- Keep responses concise and domain specific.\n\n---\n\n### 🛡️ Action Guidelines\n- Always choose the most relevant Subagent instead of answering everything directly.  \n- If that helps, please briefly describe the agent you are using (one line).  \n- If the tool call fails, provide a friendly error message and suggest a retry.  \n- Never expose API keys or internal node names.  \n- Maintain a polite and professional Korean style for user-facing responses.\n\n---\n\n### 🧾 Task Management Guidelines\nWhen a user query arrives:\n1. Carefully analyze your intentions.  \n2. Segment your objectives into a list of clear TODO actionable steps.  \n3. Run each TODO item by invoking the appropriate Subagent or tool sequentially.  \n4. Continue processing until all TODO items are verified and successfully completed.  \n5. Stop only when the full TODO list is complete.\n\n---\n\n### 💬 Example inference\n- User: \"Find me tech news today\" → Use search agent.  \n- User: \"Save this content in Jira\" → Using Jira Agent.  \n- User: \"Please share this result with Teams\" → Using Teams Agent.  \n- User: \"Tell me the weather now\" → Use the search agent (via SerpAPI).  \n- User: \"Leave only notes\" → Default internal response (no external calls).\n\n---\n\n### ✅ Output Policy\n- Go to the appropriate Subagent or tool.  \n- If multiple steps are required (for example, \"search and save as a note\"), plan sequentially:  \n  1. Use Discovery Agent → Summary Results  \n  2. Forward summary to Jira agent for upload  \n- Keep the overall output clear, short, and systematic.",
+          "maxIterations": 30
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "4d8d30f8-0d15-490a-b81e-21ea1828dcd8",
+      "name": "supervisor agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "openai/gpt-oss-20b",
+          "mode": "list",
+          "cachedResultName": "openai/gpt-oss-20b"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        144,
+        192
+      ],
+      "id": "51499442-4c52-4869-95d4-ef71c88861fd",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "DM8jidE7BKlYJYIm",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Return_All', ``, 'boolean') }}",
+        "options": {
+          "jql": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('JQL', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.jiraTool",
+      "typeVersion": 1,
+      "position": [
+        608,
+        480
+      ],
+      "id": "ecb4b5ea-2d2d-4644-b77e-51c64e4d72fc",
+      "name": "Get many issues in Jira Software",
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "JE1AMkZdoXjJZPGD",
+          "name": "Jira SW Cloud account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        192
+      ],
+      "id": "49ae8306-f26a-4066-8442-f5122f26140f",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "n0vBwBT1ylk4CTk2",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "AI Agent that can call when Using for Searching Anything with Jira and SERP API",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        352,
+        336
+      ],
+      "id": "f0b91ce2-94f7-4176-b857-918fcc65a85f",
+      "name": "Search Agent"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        464,
+        480
+      ],
+      "id": "7f8f92b9-1935-4699-8037-445868333dfc",
+      "name": "Simple Memory1"
+    },
+    {
+      "parameters": {
+        "sendTo": "hycndev@gmail.com",
+        "subject": "[Test] AI Agent Answer",
+        "message": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Message', ``, 'string') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [
+        1792,
+        480
+      ],
+      "id": "f90d9211-a8d8-45da-86a6-14bd3f10f1f9",
+      "name": "Send a message in Gmail",
+      "webhookId": "3c0a9478-e158-43cb-82ad-6e508c2a82b3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "yT4JXaK4sCm0ktJi",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "AI Agent that calling for send message to teams and send mail",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "You are a helpful assistant\n\n입력이 들어오면 \n메일 발송인 경우, Send a message in Gmail을 활용하여 반드시 메일 발송합니다.\n\n팀즈 메시지인 경우, Send a message in Teams를 활용하여 반드시 메시지를 보내세요. Teams 메시지 형식은 아래와 같이 구성해주세요.\n{\n  \"type\": \"adaptiveCardMessage\",\n  \"attachments\": [\n    {\n      \"contentType\": \"application/vnd.microsoft.card.adaptive\",\n      \"content\": {\n        \"$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",\n        \"type\": \"AdaptiveCard\",\n        \"version\": \"1.5\",\n        \"body\": [\n          {\n            \"type\": \"Container\",\n            \"items\": [\n              {\n                \"type\": \"TextBlock\",\n                \"text\": \"🤖 AI Agent Answer\",\n                \"wrap\": true,\n                \"weight\": \"Bolder\",\n                \"spacing\": \"Medium\"\n              }\n            ],\n            \"style\": \"default\",\n            \"separator\": true\n          },\n          {\n            \"type\": \"TextBlock\",\n            \"text\": \"사용자가 입력한 내용\",\n            \"isSubtle\": true,\n            \"wrap\": true,\n            \"spacing\": \"Medium\"\n          }\n        ]\n      }\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        1456,
+        336
+      ],
+      "id": "25886e64-dbff-4d03-81b0-9b998dd3368d",
+      "name": "Transfer Agent"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1472,
+        480
+      ],
+      "id": "b7d6da53-d871-483f-a008-1a582a52e4cf",
+      "name": "Simple Memory2"
+    },
+    {
+      "parameters": {
+        "operation": "youtube",
+        "search_query": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Search_Query__search_query_', ``, 'string') }}",
+        "additionalFields": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-serpapi.serpApiTool",
+      "typeVersion": 1,
+      "position": [
+        896,
+        480
+      ],
+      "id": "d78b4a5c-048d-4fae-9dea-20b530f49279",
+      "name": "Youtube search in SerpApi",
+      "credentials": {
+        "serpApi": {
+          "id": "bkKlwCcjXDankust",
+          "name": "SerpApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "AI Agent that can call when Using for Managing Jira Issues",
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        1008,
+        336
+      ],
+      "id": "c218226c-07b1-4bc9-a3bd-48a403d4435f",
+      "name": "Issue Agent",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "issueKey": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Issue_Key', ``, 'string') }}",
+        "updateFields": {
+          "assignee": {
+            "mode": "list",
+            "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Assignee', ``, 'string') }}"
+          },
+          "description": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Description', ``, 'string') }}",
+          "priority": {
+            "mode": "list",
+            "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Priority', ``, 'string') }}"
+          },
+          "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', ``, 'string') }}",
+          "statusId": {
+            "mode": "list",
+            "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Status', ``, 'string') }}"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.jiraTool",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        480
+      ],
+      "id": "482ab755-e5de-4d39-a9c4-956345ece073",
+      "name": "Update an issue in Jira Software",
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "JE1AMkZdoXjJZPGD",
+          "name": "Jira SW Cloud account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "project": {
+          "__rl": true,
+          "value": "10141",
+          "mode": "list",
+          "cachedResultName": "아모레퍼시픽 AI 업무자동화 TFT"
+        },
+        "issueType": {
+          "__rl": true,
+          "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Issue_Type', ``, 'string') }}",
+          "mode": "id",
+          "__regex": "^([0-9]{1,})"
+        },
+        "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', ``, 'string') }}",
+        "additionalFields": {
+          "assignee": {
+            "mode": "list",
+            "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Assignee', ``, 'string') }}"
+          },
+          "description": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Description', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.jiraTool",
+      "typeVersion": 1,
+      "position": [
+        1312,
+        480
+      ],
+      "id": "fbd83aea-e4e4-4e4f-9a82-42b55c612d75",
+      "name": "Create an issue in Jira Software",
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "JE1AMkZdoXjJZPGD",
+          "name": "Jira SW Cloud account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1056,
+        480
+      ],
+      "id": "74bc18e2-ef18-4a3a-9e43-ed854d6f842f",
+      "name": "Simple Memory3"
+    },
+    {
+      "parameters": {
+        "teamId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftTeamsTool",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        480
+      ],
+      "id": "12d9384b-0be7-48bd-a97c-5d9078922e26",
+      "name": "Create channel in Microsoft Teams",
+      "webhookId": "cc5d0aff-8ec6-422d-bd54-d5de26990183"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "supervisor agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "supervisor agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Search Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Transfer Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Issue Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google search in SerpApi": {
+      "ai_tool": [
+        [
+          {
+            "node": "Search Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "supervisor agent",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get many issues in Jira Software": {
+      "ai_tool": [
+        [
+          {
+            "node": "Search Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "supervisor agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "supervisor agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "Search Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message in Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "Transfer Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transfer Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "supervisor agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory2": {
+      "ai_memory": [
+        [
+          {
+            "node": "Transfer Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Youtube search in SerpApi": {
+      "ai_tool": [
+        [
+          {
+            "node": "Search Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update an issue in Jira Software": {
+      "ai_tool": [
+        [
+          {
+            "node": "Issue Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an issue in Jira Software": {
+      "ai_tool": [
+        [
+          {
+            "node": "Issue Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory3": {
+      "ai_memory": [
+        [
+          {
+            "node": "Issue Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Issue Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "supervisor agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create channel in Microsoft Teams": {
+      "ai_tool": [
+        [
+          {
+            "node": "Transfer Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3d70897e-46eb-484d-9dc0-084d5f245ccf",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b007e54dc68ebebfec657be46e7604ed5da78fee757d9916da8781555e4bd14e"
+  },
+  "id": "R9OaJHAiiD9u9SYL",
+  "tags": []
+}
