@@ -1,0 +1,373 @@
+{
+  "name": "Monitoring (Playwright MCP) - screenshot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -912,
+        -32
+      ],
+      "id": "f3ce4633-08fd-4454-ae22-484ee9269c13",
+      "name": "Every 15 Minutes"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 모니터링 설정 (schedule 트리거 timestamp 사용)\nconst triggerTimestamp = $input.first().json.timestamp;\nconst now = new Date(triggerTimestamp);\n// 한국시간으로 변환 (UTC+9)\nconst kstTime = new Date(now.getTime() + (9 * 60 * 60 * 1000));\nconst timestamp = kstTime.toISOString();\nconst checkId = `${$execution.id}-${kstTime.getTime()}`;\nconst screenshotFilename = `health-check_${kstTime.toISOString().replace(/[:.]/g, '-')}.png`;\n\nconst config = {\n  url: 'https://www.google.com',\n  checkId: checkId,\n  timestamp: timestamp,\n  targetName: 'localhost-3000',\n  screenshotFilename: screenshotFilename\n};\n\nreturn {\n  json: config\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        -32
+      ],
+      "id": "0b9c32dd-801f-48ae-9c13-49df76df5f9a",
+      "name": "Initialize Config"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "chat-input-id",
+              "name": "chatInput",
+              "value": "=URL: {{ $json.url }}\n스크린샷 파일명: {{ $json.screenshotFilename }}\n헬스 체크 시작.",
+              "type": "string"
+            },
+            {
+              "id": "330b6a2e-b02c-4756-8937-b73c78486638",
+              "name": "sessionId",
+              "value": "={{ $json.checkId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -560,
+        -32
+      ],
+      "id": "6e4e3fe1-f981-40a9-86d1-e855f580063c",
+      "name": "Prepare Agent Input"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "웹사이트 헬스 체크:\n1. browser_navigate (URL 접속)\n2. browser_evaluate로 성능 측정: () => ({timing: window.performance.timing})\n3. browser_take_screenshot (fullPage: true)\n4. browser_console_messages\n각 도구 1번씩 실행 후 종료.",
+          "maxIterations": 6,
+          "returnIntermediateSteps": true
+        }
+      },
+      "id": "d9e11ec7-c93a-4b92-8727-35e84007b2a0",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        -384,
+        -32
+      ],
+      "typeVersion": 1.8
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        224
+      ],
+      "id": "55af7199-9ab2-486f-a3df-c7b5837f6692",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "5rRAhN5ByIhyqQ88",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -320,
+        224
+      ],
+      "id": "dc195e54-c848-4389-8ee3-62f5f1c51786",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "fwYQR53oadRtTScA",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI Agent 응답에서 모니터링 결과 및 스크린샷 추출 (성능 데이터 수정 버전)\nconst config = $('Initialize Config').first().json;\nconst agentOutput = $json;\n\nconsole.log('=== AI Agent 응답 처리 시작 ===');\n\nlet performanceData = null;\nlet consoleData = null;\nlet screenshotBase64 = null;\nlet screenshotBuffer = null;\nlet navigationSuccess = false;\nlet pageTitle = '';\n\n// 1. Output에서 성능 데이터 추출\ntry {\n  if (agentOutput.output) {\n    let outputData;\n    if (agentOutput.output.includes('```json')) {\n      const jsonMatch = agentOutput.output.match(/```json\\n([\\s\\S]*?)\\n```/);\n      if (jsonMatch) {\n        outputData = JSON.parse(jsonMatch[1]);\n        console.log('✓ JSON 파싱 성공 (마크다운 코드 블록)');\n        if (outputData?.performance) {\n          performanceData = outputData.performance;\n          console.log('✓ Output에서 성능 데이터 추출 성공');\n        }\n      }\n    } else {\n      outputData = JSON.parse(agentOutput.output);\n      if (outputData?.performance) performanceData = outputData.performance;\n    }\n    if (outputData?.console_errors) consoleData = outputData.console_errors;\n  }\n} catch (e) {\n  console.error('Output 파싱 실패:', e.message);\n}\n\n// 2. intermediateSteps 처리\nconst steps = agentOutput.intermediateSteps || [];\nconsole.log(`총 ${steps.length}개의 steps`);\n\nfor (let i = 0; i < steps.length; i++) {\n  const step = steps[i];\n  const tool = step.action?.tool;\n  const observation = step.observation;\n  \n  console.log(`Step ${i}: ${tool}`);\n  \n  if (tool === 'browser_navigate') {\n    navigationSuccess = observation && observation.includes('Page URL');\n    const titleMatch = observation.match(/Page Title: ([^\\n\\r]+)/);\n    if (titleMatch) {\n      let rawTitle = titleMatch[1].trim();\n      // Page Snapshot이 포함되어 있으면 첫 줄만 추출\n      if (rawTitle.includes('- Page Snapshot:')) {\n        pageTitle = rawTitle.split(/\\\\n|- Page Snapshot:/)[0].trim();\n      } else {\n        pageTitle = rawTitle;\n      }\n      console.log('✓ 페이지 제목 추출:', pageTitle);\n    }\n  } \n  else if (tool === 'browser_evaluate') {\n    // performanceData가 이미 있으면 건너뛰기\n    if (performanceData) {\n      console.log('⚠ 성능 데이터 이미 존재, 건너뛰기');\n      continue;\n    }\n    \n    // 개선된 성능 데이터 파싱\n    console.log('=== 성능 데이터 추출 시도 ===');\n    \n    try {\n      // observation이 JSON 배열 형태인 경우\n      if (typeof observation === 'string' && observation.trim().startsWith('[')) {\n        const observationArray = JSON.parse(observation);\n        console.log('✓ observation을 JSON 배열로 파싱 성공');\n        \n        // text 타입에서 데이터 찾기\n        for (const item of observationArray) {\n          if (item.type === 'text' && item.text) {\n            console.log('text 항목 발견, 길이:', item.text.length);\n            \n            // ### Result 다음의 JSON 추출 (balanced brace matching)\n            let jsonStr = null;\n            const resultIndex = item.text.indexOf('### Result');\n            if (resultIndex !== -1) {\n              const startIdx = item.text.indexOf('{', resultIndex);\n              if (startIdx !== -1) {\n                let braceCount = 0;\n                let endIdx = -1;\n                \n                for (let j = startIdx; j < item.text.length; j++) {\n                  if (item.text[j] === '{') braceCount++;\n                  else if (item.text[j] === '}') {\n                    braceCount--;\n                    if (braceCount === 0) {\n                      endIdx = j;\n                      break;\n                    }\n                  }\n                }\n                \n                if (endIdx !== -1) {\n                  jsonStr = item.text.substring(startIdx, endIdx + 1);\n                  console.log('✓ Balanced brace matching으로 JSON 추출 성공');\n                } else {\n                  console.error('❌ Balanced brace matching 실패: 닫는 brace를 찾지 못함');\n                }\n              } else {\n                console.error('❌ JSON 시작 { 를 찾지 못함');\n              }\n            } else {\n              console.error('❌ ### Result를 찾지 못함');\n            }\n            \n            const resultMatch = jsonStr ? [null, jsonStr] : null;\n            if (resultMatch) {\n              console.log('JSON 문자열 추출, 길이:', jsonStr.length);\n              console.log('JSON 시작 부분:', jsonStr.substring(0, 200));\n              \n              try {\n                performanceData = JSON.parse(jsonStr);\n                console.log('✓✓✓ 성능 데이터 파싱 성공!');\n                console.log('timing 데이터:', performanceData.timing ? '있음' : '없음');\n                if (performanceData.timing) {\n                  console.log('- navigationStart:', performanceData.timing.navigationStart);\n                  console.log('- loadEventEnd:', performanceData.timing.loadEventEnd);\n                  console.log('- domContentLoadedEventEnd:', performanceData.timing.domContentLoadedEventEnd);\n                }\n                break;\n              } catch (jsonError) {\n                console.error('❌ JSON 파싱 실패:', jsonError.message);\n                console.error('JSON 문자열 샘플 (앞 500자):', jsonStr.substring(0, 500));\n                console.error('JSON 문자열 샘플 (뒤 200자):', jsonStr.substring(Math.max(0, jsonStr.length - 200)));\n                \n                // 대안: 줄바꿈 제거하고 다시 시도\n                try {\n                  const cleanedJson = jsonStr.replace(/\\n/g, '');\n                  performanceData = JSON.parse(cleanedJson);\n                  console.log('✓ 줄바꿈 제거 후 파싱 성공');\n                } catch (e2) {\n                  console.error('❌ 재시도 실패:', e2.message);\n                }\n              }\n            } else {\n              console.warn('⚠ ### Result\\\\n{...} 패턴 매칭 실패');\n              console.log('item.text 내용 (처음 500자):', item.text.substring(0, 500));\n            }\n          }\n        }\n      } \n      // observation이 일반 문자열인 경우 (기존 방식)\n      else if (typeof observation === 'string') {\n        console.log('observation을 일반 문자열로 처리');\n        const jsonMatch = observation.match(/### Result\\n(\\{[\\s\\S]*?\\})/);\n        if (jsonMatch) {\n          performanceData = JSON.parse(jsonMatch[1]);\n          console.log('✓ 기존 방식으로 성능 데이터 추출 성공');\n        }\n      }\n      \n      if (!performanceData) {\n        console.warn('⚠⚠⚠ 성능 데이터를 찾을 수 없음!');\n      }\n    } catch (e) {\n      console.error('❌ 성능 데이터 추출 실패:', e.message);\n      console.error('Stack:', e.stack);\n    }\n  } \n  else if (tool === 'browser_console_messages' && !consoleData) {\n    consoleData = observation;\n  } \n  else if (tool === 'browser_take_screenshot') {\n    console.log('=== 스크린샷 추출 시도 ===');\n    console.log('observation 타입:', typeof observation);\n    console.log('observation 길이:', observation?.length);\n    \n    if (!observation) {\n      console.error('❌ observation이 없음');\n      continue;\n    }\n    \n    if (typeof observation !== 'string') {\n      console.error('❌ observation이 문자열이 아님:', typeof observation);\n      console.log('observation 내용:', JSON.stringify(observation).substring(0, 200));\n      continue;\n    }\n    \n    console.log('observation 시작 200자:', observation.substring(0, 200));\n    \n    try {\n      const trimmed = observation.trim();\n      console.log('trimmed 시작 문자:', trimmed.substring(0, 10));\n      console.log('[ 로 시작:', trimmed.startsWith('['));\n      \n      if (trimmed.startsWith('[')) {\n        const observationArray = JSON.parse(trimmed);\n        console.log(`✓ 배열 파싱 성공 (${observationArray.length}개 항목)`);\n        \n        for (let i = 0; i < observationArray.length; i++) {\n          const item = observationArray[i];\n          console.log(`  Item ${i}: type=${item.type}, has data=${!!item.data}`);\n          \n          if (item.type === 'image' && item.data) {\n            console.log(`  -> 이미지 데이터 타입: ${typeof item.data}`);\n            console.log(`  -> 이미지 데이터 길이: ${item.data.length}`);\n            console.log(`  -> 데이터 시작: ${item.data.substring(0, 50)}`);\n            \n            if (typeof item.data === 'string' && item.data.length > 0) {\n              screenshotBase64 = item.data;\n              \n              // base64 데이터 검증\n              console.log(`  -> Base64 데이터 검증 시작`);\n              console.log(`  -> Base64 길이: ${screenshotBase64.length}`);\n              console.log(`  -> 시작 문자: ${screenshotBase64.substring(0, 20)}`);\n              console.log(`  -> iVBORw로 시작 (PNG): ${screenshotBase64.startsWith('iVBORw')}`);\n              \n              // Buffer로 변환\n              try {\n                screenshotBuffer = Buffer.from(screenshotBase64, 'base64');\n                console.log(`✓ Buffer 변환 성공: ${screenshotBuffer.length} bytes`);\n                \n                // PNG 헤더 검증 (89 50 4E 47)\n                const pngHeader = screenshotBuffer.slice(0, 8);\n                const isPNG = pngHeader[0] === 0x89 && \n                             pngHeader[1] === 0x50 && \n                             pngHeader[2] === 0x4E && \n                             pngHeader[3] === 0x47;\n                \n                console.log(`✓ PNG 헤더: ${Array.from(pngHeader.slice(0, 4)).map(b => '0x' + b.toString(16).toUpperCase()).join(' ')}`);\n                console.log(`✓ 유효한 PNG: ${isPNG}`);\n                \n                if (!isPNG) {\n                  console.warn('⚠ PNG 헤더가 올바르지 않습니다!');\n                  console.warn('Base64 디코딩 문제일 수 있습니다');\n                }\n                \n                console.log(`✓✓✓ 스크린샷 발견! Buffer 크기: ${screenshotBuffer.length} bytes`);\n                console.log(`✓✓✓ Buffer가 유효함: ${Buffer.isBuffer(screenshotBuffer)}`);\n                break;\n              } catch (bufferError) {\n                console.error('❌ Buffer 변환 실패:', bufferError.message);\n                screenshotBuffer = null;\n              }\n            } else {\n              console.warn('  -> 데이터가 비어있거나 문자열이 아님');\n            }\n          }\n        }\n      } else {\n        console.warn('⚠ observation이 [ 로 시작하지 않음');\n      }\n    } catch (e) {\n      console.error('❌ 파싱 에러:', e.message);\n      console.error('Stack:', e.stack);\n    }\n    \n    if (!screenshotBuffer) {\n      console.warn('⚠⚠⚠ 스크린샷을 찾을 수 없음!');\n    }\n  }\n}\n\n// 콘솔 에러 추출\nconst jsErrors = [];\nif (consoleData && consoleData.includes('[ERROR]')) {\n  const errorLines = consoleData.split('\\n').filter(line => line.includes('[ERROR]'));\n  jsErrors.push(...errorLines.map(line => ({ message: line, type: 'error' })));\n}\n\n// 성능 데이터 계산\nlet pageLoadTime = 0;\nlet domContentLoadedTime = 0;\nlet firstContentfulPaint = 0;\nlet ttfb = 0;\n\nconsole.log('=== 성능 메트릭 계산 ===');\nconsole.log('performanceData:', performanceData ? '있음' : '없음');\n\nif (performanceData?.timing) {\n  const t = performanceData.timing;\n  console.log('Timing 데이터:');\n  console.log('- navigationStart:', t.navigationStart);\n  console.log('- loadEventEnd:', t.loadEventEnd);\n  console.log('- domContentLoadedEventEnd:', t.domContentLoadedEventEnd);\n  console.log('- responseStart:', t.responseStart);\n  console.log('- responseEnd:', t.responseEnd);\n  \n  if (t.loadEventEnd && t.navigationStart) {\n    pageLoadTime = t.loadEventEnd - t.navigationStart;\n  }\n  if (t.domContentLoadedEventEnd && t.navigationStart) {\n    domContentLoadedTime = t.domContentLoadedEventEnd - t.navigationStart;\n  }\n  if (t.responseEnd && t.navigationStart) {\n    firstContentfulPaint = t.responseEnd - t.navigationStart;\n  }\n  if (t.responseStart && t.navigationStart) {\n    ttfb = t.responseStart - t.navigationStart;\n  }\n  \n  console.log('계산된 값:');\n  console.log('- pageLoadTime:', pageLoadTime, 'ms');\n  console.log('- domContentLoadedTime:', domContentLoadedTime, 'ms');\n  console.log('- firstContentfulPaint:', firstContentfulPaint, 'ms');\n  console.log('- ttfb:', ttfb, 'ms');\n} else if (performanceData?.navigation) {\n  pageLoadTime = performanceData.navigation.duration || 0;\n  domContentLoadedTime = performanceData.navigation.domContentLoadedEventEnd || 0;\n  console.log('Navigation 데이터 사용:', performanceData.navigation);\n} else {\n  console.warn('⚠ 성능 데이터가 없음 - 모든 값이 0으로 설정됨');\n}\n\nconst httpStatusCode = navigationSuccess ? 200 : 500;\n\n// 상태 결정\nlet status = 'success';\nlet severity = 'low';\n\nif (!navigationSuccess) {\n  status = 'error';\n  severity = 'critical';\n} else if (jsErrors.length >= 5) {\n  status = 'error';\n  severity = 'medium';\n} else if (pageLoadTime > 3000) {\n  status = 'warning';\n  severity = 'medium';\n} else if (jsErrors.length > 0 || pageLoadTime > 2000) {\n  status = 'warning';\n  severity = 'low';\n}\n\n// 결과 데이터\nconst monitoringResult = {\n  check_id: config.checkId,\n  url: config.url,\n  check_timestamp: config.timestamp,\n  status: status,\n  http_status_code: httpStatusCode,\n  page_load_time_ms: pageLoadTime,\n  first_contentful_paint_ms: firstContentfulPaint,\n  dom_content_loaded_ms: domContentLoadedTime,\n  total_resources_loaded: 0,\n  failed_resources_count: 0,\n  javascript_errors: jsErrors,\n  console_errors: jsErrors,\n  network_errors: [],\n  screenshot_path: null,\n  screenshot_size_bytes: screenshotBuffer ? screenshotBuffer.length : 0,\n  page_title: pageTitle,\n  meta_description: '',\n  raw_data: {\n    agent_output: agentOutput,\n    performance: performanceData,\n    console: consoleData\n  }\n};\n\nconsole.log('=== 최종 처리 결과 ===');\nconsole.log('URL:', config.url);\nconsole.log('상태:', status);\nconsole.log('로드 시간:', pageLoadTime, 'ms');\nconsole.log('DOM 로드:', domContentLoadedTime, 'ms');\nconsole.log('FCP:', firstContentfulPaint, 'ms');\nconsole.log('TTFB:', ttfb, 'ms');\nconsole.log('JS 에러:', jsErrors.length);\nconsole.log('페이지 제목:', pageTitle);\nconsole.log('스크린샷:', screenshotBuffer ? `${screenshotBuffer.length} bytes` : '없음');\nconsole.log('========================');\n\nconsole.log('=== 바이너리 데이터 준비 ===');\nconsole.log('screenshotBuffer 존재:', !!screenshotBuffer);\nconsole.log('screenshotBuffer 타입:', typeof screenshotBuffer);\nconsole.log('Buffer.isBuffer:', screenshotBuffer ? Buffer.isBuffer(screenshotBuffer) : false);\nconsole.log('screenshotBuffer 크기:', screenshotBuffer ? screenshotBuffer.length : 0);\n\n// 반환값\nconst result = {\n  json: {\n    config,\n    monitoringResult,\n    summary: {\n      status,\n      severity,\n      timestamp: config.timestamp,\n      url: config.url,\n      pageLoadTime,\n      httpStatusCode,\n      jsErrorCount: jsErrors.length,\n      networkErrorCount: 0,\n      pageTitle\n    },\n    hasScreenshot: !!screenshotBuffer,\n    screenshotBufferSize: screenshotBuffer ? screenshotBuffer.length : 0\n  }\n};\n\n// 바이너리 데이터 추가 (n8n 형식)\nif (screenshotBuffer && Buffer.isBuffer(screenshotBuffer) && screenshotBuffer.length > 0) {\n  result.binary = {\n    screenshot: {\n      data: screenshotBuffer,\n      mimeType: 'image/png',\n      fileName: config.screenshotFilename,\n      fileExtension: 'png'\n    }\n  };\n  console.log('✓✓✓ 바이너리 데이터 첨부 완료 (n8n 형식):', screenshotBuffer.length, 'bytes');\n  console.log('✓ result.binary.screenshot.data 타입:', typeof result.binary.screenshot.data);\n  console.log('✓ result.binary.screenshot.data Buffer?:', Buffer.isBuffer(result.binary.screenshot.data));\n  console.log('✓ fileName:', result.binary.screenshot.fileName);\n  console.log('✓ mimeType:', result.binary.screenshot.mimeType);\n} else {\n  console.error('❌❌❌ 바이너리 데이터 없음!');\n  if (screenshotBuffer) {\n    console.error('  - screenshotBuffer 존재하지만 유효하지 않음');\n    console.error('  - isBuffer:', Buffer.isBuffer(screenshotBuffer));\n    console.error('  - length:', screenshotBuffer.length);\n  }\n}\n\nconsole.log('=== 최종 반환값 구조 ===');\nconsole.log('result.json:', Object.keys(result.json));\nconsole.log('result.binary:', result.binary ? Object.keys(result.binary) : 'undefined');\nconsole.log('=======================');\n\nreturn result;\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        -32
+      ],
+      "id": "8edaff45-33bd-4154-8764-92f356d3d130",
+      "name": "Process AI Results & Extract Screenshot"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://nhubmvsmsiovwbklzfvz.supabase.co/storage/v1/object/screenshots/{{ $json.config.screenshotFilename }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            },
+            {
+              "name": "Content-Type",
+              "value": "image/png"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "screenshot",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        128,
+        -32
+      ],
+      "id": "a21bec78-6403-420c-909b-e59d6a71cf62",
+      "name": "Upload to Supabase",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// 업로드 성공 여부 체크하고 URL 설정\nconst processData = $('Process AI Results & Extract Screenshot').first().json;\nconst uploadData = $json;\n\nlet screenshotUrl;\n\n// 에러가 있거나 스크린샷이 없으면 Placeholder 사용\nif (uploadData.error || !processData.hasScreenshot) {\n  console.log('⚠ 스크린샷 업로드 실패 또는 스크린샷 없음 - Placeholder 사용');\n  screenshotUrl = 'https://via.placeholder.com/800x600.png?text=No+Screenshot+Available';\n} else {\n  console.log('✓ 스크린샷 업로드 성공');\n  screenshotUrl = `https://nhubmvsmsiovwbklzfvz.supabase.co/storage/v1/object/public/screenshots/${processData.config.screenshotFilename}`;\n}\n\nreturn {\n  json: {\n    ...processData,\n    screenshotUrl: screenshotUrl\n  }\n};"
+      },
+      "id": "4b9121c1-9b1c-4e2e-883c-9836c71fd33e",
+      "name": "Set Screenshot URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Teams 메시지 포맷팅 (수정 버전)\nconst processData = $('Process AI Results & Extract Screenshot').first().json;\nconst screenshotUrl = $json.screenshotUrl;\n\nconst summary = processData.summary;\nconst monitoringResult = processData.monitoringResult;\n\nconsole.log('=== Teams 메시지 포맷팅 ===');\nconsole.log('summary:', JSON.stringify(summary, null, 2));\n\n// 상태 아이콘\nconst statusIcon = summary.status === 'success' ? '✅' : \n                   summary.status === 'warning' ? '⚠️' : '❌';\nconst statusText = summary.status === 'success' ? '정상' : \n                   summary.status === 'warning' ? '경고' : '에러';\n\n// 페이지 제목 (안전하게 처리)\nlet pageTitle = summary.pageTitle || monitoringResult.page_title || 'Fresh - 신선한 식재료를 새벽까지';\n// 제목 길이 제한\nif (pageTitle.length > 100) {\n  pageTitle = pageTitle.substring(0, 97) + '...';\n}\nconsole.log('페이지 제목:', pageTitle);\n\n// 페이지 로드 시간 (정확한 값 사용)\nconst pageLoadTime = summary.pageLoadTime || monitoringResult.page_load_time_ms || 0;\nconsole.log('페이지 로드 시간:', pageLoadTime, 'ms');\n\n// 체크 시간 포맷팅: 2025.11.06 17:48:59\nconst date = new Date(summary.timestamp);\nconst year = date.getFullYear();\nconst month = String(date.getMonth() + 1).padStart(2, '0');\nconst day = String(date.getDate()).padStart(2, '0');\nconst hours = String(date.getHours()).padStart(2, '0');\nconst minutes = String(date.getMinutes()).padStart(2, '0');\nconst seconds = String(date.getSeconds()).padStart(2, '0');\nconst checkTime = `${year}.${month}.${day} ${hours}:${minutes}:${seconds}`;\nconsole.log('체크 시간:', checkTime);\n\n// Teams Adaptive Card\nconst adaptiveCard = {\n  type: \"message\",\n  attachments: [\n    {\n      contentType: \"application/vnd.microsoft.card.adaptive\",\n      content: {\n        $schema: \"http://adaptivecards.io/schemas/adaptive-card.json\",\n        type: \"AdaptiveCard\",\n        version: \"1.5\",\n        body: [\n          {\n            type: \"Container\",\n            items: [\n              {\n                type: \"TextBlock\",\n                text: \"🤖 웹사이트 헬스 체크 리포트\",\n                size: \"Large\",\n                weight: \"Bolder\",\n                color: summary.status === 'success' ? 'Good' : 'Attention',\n                spacing: \"Medium\"\n              },\n              {\n                type: \"TextBlock\",\n                text: pageTitle,\n                weight: \"Bolder\",\n                wrap: true,\n                spacing: \"Small\",\n                size: \"Medium\"\n              }\n            ],\n            style: \"default\",\n            bleed: true\n          },\n          {\n            type: \"Container\",\n            items: [\n              {\n                type: \"FactSet\",\n                facts: [\n                  {\n                    title: \"URL\",\n                    value: summary.url\n                  },\n                  {\n                    title: \"상태\",\n                    value: `${statusIcon} ${statusText}`\n                  },\n                  {\n                    title: \"HTTP 상태 코드\",\n                    value: summary.httpStatusCode.toString()\n                  },\n                  {\n                    title: \"페이지 로드 시간\",\n                    value: `${pageLoadTime} ms`\n                  },\n                  {\n                    title: \"JavaScript 에러\",\n                    value: `${summary.jsErrorCount}개`\n                  },\n                  {\n                    title: \"네트워크 에러\",\n                    value: `${summary.networkErrorCount}개`\n                  },\n                  {\n                    title: \"체크 시간\",\n                    value: checkTime\n                  }\n                ]\n              }\n            ],\n            style: \"emphasis\",\n            bleed: true,\n            separator: true\n          },\n          {\n            type: \"Container\",\n            items: [\n              {\n                type: \"TextBlock\",\n                text: summary.status === 'success' ? \n                  '🟢 현재 모든 시스템이 정상적으로 작동 중입니다.' : \n                  '🔴 AI Agent가 문제를 감지했습니다. 확인이 필요합니다.',\n                wrap: true,\n                color: summary.status === 'success' ? 'Good' : 'Attention',\n                weight: \"Bolder\",\n                spacing: \"Medium\"\n              }\n            ],\n            style: \"default\",\n            separator: true\n          },\n          {\n            type: \"Image\",\n            url: screenshotUrl,\n            size: \"Large\",\n            spacing: \"Medium\",\n            separator: true\n          },\n          {\n            type: \"TextBlock\",\n            text: \"⚙️ AI Agent가 주기적으로 사이트 상태를 모니터링 중입니다.\",\n            isSubtle: true,\n            wrap: true,\n            spacing: \"Medium\",\n            size: \"Small\"\n          }\n        ],\n        actions: [\n          {\n            type: \"Action.OpenUrl\",\n            title: \"🔍 사이트 열기\",\n            url: summary.url\n          },\n          {\n            type: \"Action.OpenUrl\",\n            title: \"📷 스크린샷 원본 보기\",\n            url: screenshotUrl\n          }\n        ]\n      }\n    }\n  ]\n};\n\nreturn {\n  json: {\n    ...processData,\n    screenshotUrl: screenshotUrl,\n    teamsMessage: adaptiveCard\n  }\n};\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        -32
+      ],
+      "id": "1038c98b-da2a-40c3-a6f7-21a0f859e69f",
+      "name": "Format Teams Message"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "http://playwright-mcp:3001/sse",
+        "serverTransport": "sse",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.2,
+      "position": [
+        -176,
+        224
+      ],
+      "id": "8f6b60d4-b34d-452e-b194-6316b289f808",
+      "name": "Playwright MCP"
+    },
+    {
+      "parameters": {
+        "resource": "channelMessage",
+        "teamId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [
+        704,
+        -32
+      ],
+      "id": "e474aca7-8554-41da-900a-f058f20ddaab",
+      "name": "Create message",
+      "webhookId": "5b0e49b3-3b03-4749-85e7-001b203ce960"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Initialize Config": {
+      "main": [
+        [
+          {
+            "node": "Prepare Agent Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Agent Input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Process AI Results & Extract Screenshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Results & Extract Screenshot": {
+      "main": [
+        [
+          {
+            "node": "Upload to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Set Screenshot URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Screenshot URL": {
+      "main": [
+        [
+          {
+            "node": "Format Teams Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Teams Message": {
+      "main": [
+        [
+          {
+            "node": "Create message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Initialize Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Playwright MCP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d00a924a-f464-4d48-8b43-0185de22dcd0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b007e54dc68ebebfec657be46e7604ed5da78fee757d9916da8781555e4bd14e"
+  },
+  "id": "JyWU6bl9TXfVqaaR",
+  "tags": []
+}
